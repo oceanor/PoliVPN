@@ -1,0 +1,48 @@
+# MSI Windows: pubblica automaticamente sulla GitHub Release quando pushi un tag `v*` (es. `v1.1.0`).
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  msi-windows:
+    name: MSI (Windows x64)
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: vpn-app/src-tauri -> target
+
+      - name: Install Tauri CLI
+        run: cargo install tauri-cli --locked
+
+      - name: Build MSI
+        working-directory: vpn-app
+        run: cargo tauri build --bundles msi
+
+      - name: Artifacts (solo workflow_dispatch senza release)
+        if: github.ref_type != 'tag'
+        uses: actions/upload-artifact@v4
+        with:
+          name: PoliVPN-msi
+          path: vpn-app/src-tauri/target/release/bundle/msi/*.msi
+          if-no-files-found: error
+
+      - name: Allega MSI alla Release GitHub
+        if: github.ref_type == 'tag'
+        uses: softprops/action-gh-release@v2
+        with:
+          files: vpn-app/src-tauri/target/release/bundle/msi/*.msi
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

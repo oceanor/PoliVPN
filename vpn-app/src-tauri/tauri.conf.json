@@ -1,7 +1,7 @@
 {
   "$schema": "https://raw.githubusercontent.com/nicedoc/tauri-schema/main/schema.json",
   "productName": "PoliVPN",
-  "version": "1.0.0",
+  "version": "1.1.0",
   "identifier": "com.polivpn.app",
   "build": {
     "frontendDist": "../src",
