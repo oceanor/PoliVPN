@@ -32,6 +32,8 @@ pub struct InstallDefaults {
     pub gateway: Option<String>,
     pub port: Option<u16>,
     pub title: String,
+    /// Mostra l’immagine branding sopra il sottotitolo; `POLIVPN_SHOW_LOGO=false` in compilazione la nasconde.
+    pub show_logo: bool,
 }
 
 /// `POLIVPN_VPN_TYPE` / `VPN_TYPE` in compilazione: `SPLIT` → tunnel split (serve `<addr>` nell’XML); altrimenti full-tunnel.
@@ -39,6 +41,24 @@ fn compile_time_vpn_full_tunnel() -> bool {
     match option_env!("POLIVPN_VPN_TYPE") {
         None => true,
         Some(s) => !matches!(s.trim().to_ascii_lowercase().as_str(), "split"),
+    }
+}
+
+/// Logo nell’UI: default **visibile**; `POLIVPN_SHOW_LOGO` / `SHOW_LOGO` in compilazione con valori `0`, `false`, `no`, `off` la nasconde.
+fn compile_time_show_logo() -> bool {
+    match option_env!("POLIVPN_SHOW_LOGO") {
+        None => true,
+        Some(s) => {
+            let t = s.trim();
+            if t.is_empty() {
+                true
+            } else {
+                !matches!(
+                    t.to_ascii_lowercase().as_str(),
+                    "0" | "false" | "no" | "off"
+                )
+            }
+        }
     }
 }
 
@@ -71,6 +91,7 @@ fn get_install_defaults() -> InstallDefaults {
         gateway,
         port,
         title: compile_time_brand_title().to_string(),
+        show_logo: compile_time_show_logo(),
     }
 }
 

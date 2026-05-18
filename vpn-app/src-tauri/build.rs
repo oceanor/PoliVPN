@@ -10,6 +10,7 @@ struct PolivpnBuildVars {
     port: Option<String>,
     vpn_type: Option<String>,
     title: Option<String>,
+    show_logo: Option<String>,
 }
 
 fn main() {
@@ -94,6 +95,9 @@ fn apply_polivpn_rustc_env_from_env_files() {
             if parsed.title.is_some() {
                 merged.title = parsed.title;
             }
+            if parsed.show_logo.is_some() {
+                merged.show_logo = parsed.show_logo;
+            }
         }
     }
 
@@ -108,6 +112,9 @@ fn apply_polivpn_rustc_env_from_env_files() {
     }
     if let Some(v) = merged.title {
         println!("cargo:rustc-env=POLIVPN_TITLE={v}");
+    }
+    if let Some(v) = merged.show_logo {
+        println!("cargo:rustc-env=POLIVPN_SHOW_LOGO={v}");
     }
 }
 
@@ -151,6 +158,11 @@ fn parse_polivpn_env_file(path: &Path) -> Option<PolivpnBuildVars> {
                     out.title = Some(val);
                 }
             }
+            "POLIVPN_SHOW_LOGO" | "SHOW_LOGO" => {
+                if !val.is_empty() {
+                    out.show_logo = Some(val);
+                }
+            }
             _ => {}
         }
     }
@@ -159,6 +171,7 @@ fn parse_polivpn_env_file(path: &Path) -> Option<PolivpnBuildVars> {
         && out.port.is_none()
         && out.vpn_type.is_none()
         && out.title.is_none()
+        && out.show_logo.is_none()
     {
         None
     } else {

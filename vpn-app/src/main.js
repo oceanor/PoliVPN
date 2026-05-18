@@ -6,6 +6,7 @@ const usernameEl = document.getElementById('username');
 const passwordEl = document.getElementById('password');
 const saveCredsCheck = document.getElementById('saveCreds');
 const brandSubtitleEl = document.getElementById('brandSubtitle');
+const logoEl = document.getElementById('logo');
 const logsBtn = document.getElementById('logsBtn');
 const vpnForm = document.getElementById('vpnForm');
 const statusLineEl = document.getElementById('statusLine');
@@ -361,6 +362,9 @@ async function applyInstallDefaults() {
     }
     if (brandSubtitleEl && d.title != null && String(d.title).trim() !== '') {
       brandSubtitleEl.textContent = String(d.title);
+    }
+    if (logoEl && d.showLogo === false) {
+      logoEl.hidden = true;
     }
   } catch (_) {
     /* offline / vecchia build */
