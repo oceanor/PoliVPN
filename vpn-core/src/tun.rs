@@ -9,6 +9,8 @@ use std::ffi::OsString;
 use std::path::Path;
 #[cfg(windows)]
 use std::sync::OnceLock;
+#[cfg(windows)]
+use std::time::Duration;
 
 #[cfg(windows)]
 static WINTUN_DLL_PATH: OnceLock<OsString> = OnceLock::new();
@@ -63,8 +65,49 @@ pub struct TunDevice {
     name: String,
 }
 
+#[cfg(windows)]
+fn recoverable_wintun_teardown_error(msg: &str) -> bool {
+    let lower = msg.to_ascii_lowercase();
+    lower.contains("register rings")
+        || lower.contains("wintunstartsession")
+        || lower.contains("0x000004df")
+        || lower.contains("0x4df")
+        || lower.contains("1247")
+        || lower.contains("already_initialized")
+        || lower.contains("inizializzazione")
+}
+
+#[cfg(windows)]
+fn append_wintun_recovery_hint(msg: String) -> String {
+    format!(
+        "{} Suggerimento: chiudi e riapri PoliVPN o disabilita/riabilita la scheda di rete Wintun in Gestione dispositivi se l’errore persiste.",
+        msg
+    )
+}
+
 impl TunDevice {
     pub fn create(ip: &str) -> Result<Self, String> {
+        #[cfg(windows)]
+        {
+            match Self::try_create(ip) {
+                Ok(d) => Ok(d),
+                Err(e) if recoverable_wintun_teardown_error(&e) => {
+                    diag::emit(
+                        "Creazione TUN: sessione precedente ancora in chiusura, ritento tra breve…",
+                    );
+                    std::thread::sleep(Duration::from_millis(550));
+                    Self::try_create(ip).map_err(append_wintun_recovery_hint)
+                }
+                Err(e) => Err(e),
+            }
+        }
+        #[cfg(not(windows))]
+        {
+            Self::try_create(ip)
+        }
+    }
+
+    fn try_create(ip: &str) -> Result<Self, String> {
         diag::emit(format!("Creazione interfaccia TUN con IP {} …", ip));
         let mut config = tun::Configuration::default();
         config

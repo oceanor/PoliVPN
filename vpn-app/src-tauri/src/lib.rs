@@ -3,6 +3,7 @@ mod session_meta;
 mod vpn_session_snapshot;
 
 use std::sync::Arc;
+use std::time::Duration;
 use tauri::path::BaseDirectory;
 use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::Mutex;
@@ -156,57 +157,197 @@ async fn store_and_emit_log(
     app.emit("vpn-log", entry).map_err(|e| e.to_string())
 }
 
-/// Interrompe task I/O sul tunnel cancellando [`CancellationToken`] e [`JoinHandle`]; la risorsa TUN viene abbandonata dentro il task.
+/// Interrompe task I/O sul tunnel segnando [`CancellationToken`] e attendendo [`JoinHandle`] così il [`vpn_core::tun::TunDevice`] viene droppato prima di una nuova connessione (evita race Wintun).
 async fn teardown_io_task(state: &AppState) {
     if let Some(tok) = state.disconnect_token.lock().await.take() {
         tok.cancel();
     }
-    if let Some(h) = state.io_handle.lock().await.take() {
-        h.abort();
+    let Some(h) = state.io_handle.lock().await.take() else {
+        return;
+    };
+    tokio::pin!(h);
+    tokio::select! {
+        res = &mut h => {
+            let _ = res;
+        }
+        _ = tokio::time::sleep(Duration::from_secs(5)) => {
+            h.abort();
+            let _ = h.await;
+        }
     }
+}
+
+/// Quando il loop TLS/TUN termina senza «Disconnetti», ripulisce stato e risorse come dopo errore connessione.
+#[cfg(windows)]
+async fn finalize_tunnel_stopped_unplanned(
+    app: &tauri::AppHandle,
+    status: &Arc<Mutex<VpnStatus>>,
+    log_buffer: &Arc<Mutex<Vec<LogEntry>>>,
+    disconnect_token: &Arc<Mutex<Option<CancellationToken>>>,
+    nrpt_rules: &Arc<Mutex<Vec<vpn_core::net_windows::NrptRule>>>,
+    applied_dns: &Arc<Mutex<Option<vpn_core::net_windows::InstalledDns>>>,
+    installed_routes: &Arc<Mutex<Vec<vpn_core::net_windows::InstalledRoute>>>,
+    wan_host_route: &Arc<Mutex<Option<vpn_core::net_windows::InstalledRoute>>>,
+) {
+    let still_connected = matches!(*status.lock().await, VpnStatus::Connected);
+    if !still_connected {
+        return;
+    }
+
+    teardown_windows_network_tables(
+        app,
+        log_buffer,
+        nrpt_rules,
+        applied_dns,
+        installed_routes,
+        wan_host_route,
+    )
+    .await;
+
+    clear_tunnel_session_after_drop(app, status, log_buffer, disconnect_token).await;
+}
+
+#[cfg(not(windows))]
+async fn finalize_tunnel_stopped_unplanned(
+    app: &tauri::AppHandle,
+    status: &Arc<Mutex<VpnStatus>>,
+    log_buffer: &Arc<Mutex<Vec<LogEntry>>>,
+    disconnect_token: &Arc<Mutex<Option<CancellationToken>>>,
+) {
+    clear_tunnel_session_after_drop(app, status, log_buffer, disconnect_token).await;
+}
+
+async fn clear_tunnel_session_after_drop(
+    app: &tauri::AppHandle,
+    status: &Arc<Mutex<VpnStatus>>,
+    log_buffer: &Arc<Mutex<Vec<LogEntry>>>,
+    disconnect_token: &Arc<Mutex<Option<CancellationToken>>>,
+) {
+    let still_connected = matches!(*status.lock().await, VpnStatus::Connected);
+    if !still_connected {
+        return;
+    }
+
+    let _ = vpn_session_snapshot::clear(app);
+    *disconnect_token.lock().await = None;
+
+    let still_connected = matches!(*status.lock().await, VpnStatus::Connected);
+    if !still_connected {
+        return;
+    }
+
+    *status.lock().await = VpnStatus::Disconnected;
+    let _ = emit_status(app, &VpnStatus::Disconnected);
+    let _ = store_and_emit_log(
+        app,
+        log_buffer,
+        "Tunnel TLS terminato o errore I/O — VPN disconnessa.".into(),
+    )
+    .await;
+}
+
+/// Osserva [`JoinHandle`] dell’I/O: se il task termina mentre lo stato è ancora [`VpnStatus::Connected`], aggiorna UI e teardown route/DNS.
+fn spawn_io_completion_watchdog(app: &tauri::AppHandle, state: &AppState) {
+    let app = app.clone();
+    let status = state.status.clone();
+    let log_buffer = state.log_buffer.clone();
+    let disconnect_token = state.disconnect_token.clone();
+    let io_handle = state.io_handle.clone();
+    #[cfg(windows)]
+    let installed_routes = state.installed_routes.clone();
+    #[cfg(windows)]
+    let applied_dns = state.applied_dns.clone();
+    #[cfg(windows)]
+    let nrpt_rules = state.nrpt_rules.clone();
+    #[cfg(windows)]
+    let wan_host_route = state.wan_host_route.clone();
+
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(150)).await;
+            let finished = {
+                let g = io_handle.lock().await;
+                match g.as_ref() {
+                    None => return,
+                    Some(h) => h.is_finished(),
+                }
+            };
+            if !finished {
+                continue;
+            }
+            let Some(h) = io_handle.lock().await.take() else {
+                return;
+            };
+            let _ = h.await;
+
+            finalize_tunnel_stopped_unplanned(
+                &app,
+                &status,
+                &log_buffer,
+                &disconnect_token,
+                #[cfg(windows)]
+                &nrpt_rules,
+                #[cfg(windows)]
+                &applied_dns,
+                #[cfg(windows)]
+                &installed_routes,
+                #[cfg(windows)]
+                &wan_host_route,
+            )
+            .await;
+            break;
+        }
+    });
 }
 
 /// Rimuove NRPT/DNS/route Windows installate dall’ultima sessione (`polivpn`).
 #[cfg(windows)]
-async fn teardown_windows_routes_dns_nrpt(app: &tauri::AppHandle, state: &AppState) {
-    for rule in state.nrpt_rules.lock().await.drain(..) {
+async fn teardown_windows_network_tables(
+    app: &tauri::AppHandle,
+    log_buffer: &Arc<Mutex<Vec<LogEntry>>>,
+    nrpt_rules: &Arc<Mutex<Vec<vpn_core::net_windows::NrptRule>>>,
+    applied_dns: &Arc<Mutex<Option<vpn_core::net_windows::InstalledDns>>>,
+    installed_routes: &Arc<Mutex<Vec<vpn_core::net_windows::InstalledRoute>>>,
+    wan_host_route: &Arc<Mutex<Option<vpn_core::net_windows::InstalledRoute>>>,
+) {
+    for rule in nrpt_rules.lock().await.drain(..) {
         if let Err(e) = vpn_core::net_windows::nrpt_remove(&rule) {
             store_and_emit_log(
                 app,
-                &state.log_buffer,
+                log_buffer,
                 format!("NRPT remove {}: {}", rule.namespace, e),
             )
             .await
             .ok();
         }
     }
-    if let Some(applied) = state.applied_dns.lock().await.take() {
+    if let Some(applied) = applied_dns.lock().await.take() {
         if let Err(e) = vpn_core::net_windows::clear_dns(&applied) {
             store_and_emit_log(
                 app,
-                &state.log_buffer,
+                log_buffer,
                 format!("Clear DNS «{}»: {}", applied.iface_alias, e),
             )
             .await
             .ok();
         }
     }
-    for route in state.installed_routes.lock().await.drain(..) {
+    for route in installed_routes.lock().await.drain(..) {
         if let Err(e) = vpn_core::net_windows::del_split_route(&route) {
             store_and_emit_log(
                 app,
-                &state.log_buffer,
+                log_buffer,
                 format!("Del route {}: {}", route.prefix_cidr, e),
             )
             .await
             .ok();
         }
     }
-    if let Some(pin) = state.wan_host_route.lock().await.take() {
+    if let Some(pin) = wan_host_route.lock().await.take() {
         if let Err(e) = vpn_core::net_windows::del_split_route(&pin) {
             store_and_emit_log(
                 app,
-                &state.log_buffer,
+                log_buffer,
                 format!(
                     "Del route pin VPN sulla WAN ({}/{}): {}",
                     pin.prefix_cidr, pin.iface_alias, e
@@ -216,6 +357,19 @@ async fn teardown_windows_routes_dns_nrpt(app: &tauri::AppHandle, state: &AppSta
             .ok();
         }
     }
+}
+
+#[cfg(windows)]
+async fn teardown_windows_routes_dns_nrpt(app: &tauri::AppHandle, state: &AppState) {
+    teardown_windows_network_tables(
+        app,
+        &state.log_buffer,
+        &state.nrpt_rules,
+        &state.applied_dns,
+        &state.installed_routes,
+        &state.wan_host_route,
+    )
+    .await;
 }
 
 #[derive(Debug, serde::Deserialize)]
@@ -623,6 +777,8 @@ async fn connect(
     });
 
     *state.io_handle.lock().await = Some(handle);
+
+    spawn_io_completion_watchdog(&app, &state);
 
     *state.status.lock().await = VpnStatus::Connected;
     emit_status(&app, &VpnStatus::Connected)?;
