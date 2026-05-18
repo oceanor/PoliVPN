@@ -1,3 +1,5 @@
+use bytes::{Buf, BytesMut};
+
 pub mod proto {
     pub const PPP_IP: u16 = 0x0021;
     pub const LCP: u16 = 0xC021;
@@ -27,6 +29,23 @@ pub mod proto {
 /// `total_size` (BE u16, payload PPP + 6) | `'P' 'P'` | `ppp_size` (BE u16) | payload HDLC.
 /// Nessun byte aggiuntivo prima: il "protocol" PPP è dentro l'HDLC frame (`0xff 0x03 <proto> ...`).
 pub const TUNNEL_HEADER_SIZE: usize = 6;
+
+/// Come [`pop_tunnel_frame`] ma su [`BytesMut`]: avanza senza ricopiare tutto il buffer.
+pub fn pop_tunnel_frame_bm(buf: &mut BytesMut) -> Option<BytesMut> {
+    if buf.len() < TUNNEL_HEADER_SIZE {
+        return None;
+    }
+    if buf[2] != 0x50 || buf[3] != 0x50 {
+        return None;
+    }
+    let ppp_size = u16::from_be_bytes([buf[4], buf[5]]) as usize;
+    let total = TUNNEL_HEADER_SIZE + ppp_size;
+    if buf.len() < total {
+        return None;
+    }
+    buf.advance(TUNNEL_HEADER_SIZE);
+    Some(buf.split_to(ppp_size))
+}
 
 pub fn encode_tunnel_frame(ppp_hdlc_frame: &[u8]) -> Vec<u8> {
     let ppp_size = ppp_hdlc_frame.len() as u16;

@@ -1,4 +1,4 @@
-use tun::AbstractDevice;
+use tun::{AbstractDevice, DeviceReader, DeviceWriter};
 
 use crate::diag;
 use crate::error_chain::format_error_chain;
@@ -61,8 +61,9 @@ fn emit_wintun_path_diagnostics_on_load_failure() {
 }
 
 pub struct TunDevice {
-    device: tun::Device,
+    device: tun::AsyncDevice,
     name: String,
+    mtu: u16,
 }
 
 #[cfg(windows)]
@@ -86,35 +87,34 @@ fn append_wintun_recovery_hint(msg: String) -> String {
 }
 
 impl TunDevice {
-    pub fn create(ip: &str) -> Result<Self, String> {
+    pub fn create(ip: &str, mtu: u16) -> Result<Self, String> {
         #[cfg(windows)]
         {
-            match Self::try_create(ip) {
+            match Self::try_create(ip, mtu) {
                 Ok(d) => Ok(d),
                 Err(e) if recoverable_wintun_teardown_error(&e) => {
                     diag::emit(
                         "Creazione TUN: sessione precedente ancora in chiusura, ritento tra breve…",
                     );
                     std::thread::sleep(Duration::from_millis(550));
-                    Self::try_create(ip).map_err(append_wintun_recovery_hint)
+                    Self::try_create(ip, mtu).map_err(append_wintun_recovery_hint)
                 }
                 Err(e) => Err(e),
             }
         }
         #[cfg(not(windows))]
         {
-            Self::try_create(ip)
+            Self::try_create(ip, mtu)
         }
     }
 
-    fn try_create(ip: &str) -> Result<Self, String> {
-        diag::emit(format!("Creazione interfaccia TUN con IP {} …", ip));
+    fn try_create(ip: &str, mtu: u16) -> Result<Self, String> {
+        diag::emit(format!(
+            "Creazione interfaccia TUN con IP {} (MTU {}) …",
+            ip, mtu
+        ));
         let mut config = tun::Configuration::default();
-        config
-            .address(ip)
-            .netmask("255.255.255.255")
-            .mtu(1354)
-            .up();
+        config.address(ip).netmask("255.255.255.255").mtu(mtu).up();
 
         #[cfg(windows)]
         if let Some(path) = WINTUN_DLL_PATH.get() {
@@ -123,39 +123,41 @@ impl TunDevice {
             });
         }
 
-        let device = tun::create(&config).map_err(|e| {
+        let device = tun::create_as_async(&config).map_err(|e| {
             #[cfg(windows)]
             emit_wintun_path_diagnostics_on_load_failure();
 
             format!("Failed to create TUN device: {}", format_error_chain(&e))
         })?;
 
-        let name = device.tun_name().map_err(|e| format!("Failed to get TUN name: {:?}", e))?;
+        let name = device
+            .tun_name()
+            .map_err(|e| format!("Failed to get TUN name: {:?}", e))?;
 
         diag::emit(format!("Interfaccia TUN «{}» pronta.", name));
 
-        Ok(Self { device, name })
+        Ok(Self { device, name, mtu })
     }
 
     pub fn name(&self) -> &str {
         &self.name
     }
 
-    pub fn read(&self, buf: &mut [u8]) -> Result<usize, String> {
-        self.device
-            .recv(buf)
-            .map_err(|e| format!("TUN read error: {}", e))
+    pub fn mtu(&self) -> u16 {
+        self.mtu
     }
 
-    pub fn write(&self, buf: &[u8]) -> Result<usize, String> {
-        self.device
-            .send(buf)
-            .map_err(|e| format!("TUN write error: {}", e))
-    }
-}
-
-impl Drop for TunDevice {
-    fn drop(&mut self) {
-        tracing::info!("TUN device {} removed", self.name);
+    /// Apre RX/TX Wintun asincrone per gli stati dell’[`crate::io::IoLoop`].
+    pub fn into_split(self) -> std::io::Result<(DeviceWriter, DeviceReader, String, u16)> {
+        let name = self.name;
+        let mtu = self.mtu;
+        tracing::debug!(
+            target: "vpn_core::tun",
+            "TUN device «{}»: split RX/TX (MTU {}).",
+            name,
+            mtu
+        );
+        let (w, r) = self.device.split()?;
+        Ok((w, r, name, mtu))
     }
 }

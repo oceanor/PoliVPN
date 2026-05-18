@@ -13,6 +13,18 @@ pub mod tun;
 #[cfg(windows)]
 pub mod net_windows;
 
+/// MRU PPP / MTU TUN predefiniti (conservative per PPPoE + TLS + tunnel PPP).
+pub const DEFAULT_TUNNEL_MTU: u16 = 1300;
+
+/// Legge [`DEFAULT_TUNNEL_MTU`] oppure override `POLIVPN_TUNNEL_MTU` (576–1500).
+pub fn tunnel_mtu_from_env() -> u16 {
+    std::env::var("POLIVPN_TUNNEL_MTU")
+        .ok()
+        .and_then(|v| v.trim().parse::<u16>().ok())
+        .filter(|m| (576..=1500).contains(m))
+        .unwrap_or(DEFAULT_TUNNEL_MTU)
+}
+
 use thiserror::Error;
 
 #[derive(Error, Debug)]

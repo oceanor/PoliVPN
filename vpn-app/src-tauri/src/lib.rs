@@ -9,6 +9,7 @@ use tauri::{Emitter, Manager, State, WebviewUrl, WebviewWindowBuilder};
 use tokio::sync::Mutex;
 use tokio_util::sync::CancellationToken;
 use vpn_core::auth::{normalize_gateway_host, FortiVpnAuth, VpnGateway};
+use vpn_core::tunnel_mtu_from_env;
 
 #[derive(Clone, Debug, serde::Serialize)]
 pub enum VpnStatus {
@@ -499,6 +500,17 @@ async fn connect(
 
     store_and_emit_log(&app, &state.log_buffer, "Avvio tunnel...".into()).await?;
 
+    let tunnel_mtu = tunnel_mtu_from_env();
+    store_and_emit_log(
+        &app,
+        &state.log_buffer,
+        format!(
+            "MTU/MRU tunnel: {} byte (override: variabile POLIVPN_TUNNEL_MTU).",
+            tunnel_mtu,
+        ),
+    )
+    .await?;
+
     let mut tls_stream = vpn_core::tls::connect_insecure_tls(&gateway, port)
         .await
         .map_err(|e| format!("TLS tunnel (dopo XML) fallita: {}", e))?;
@@ -508,7 +520,7 @@ async fn connect(
             .await
             .map_err(|e| format!("Tunnel start failed: {}", e))?;
 
-    let mut ppp = vpn_core::ppp::PppSession::new();
+    let mut ppp = vpn_core::ppp::PppSession::new(tunnel_mtu);
 
     ppp.negotiate_lcp(&mut tls_stream, &mut tunnel_pending)
         .await
@@ -528,7 +540,7 @@ async fn connect(
     )
     .await?;
 
-    let tun = vpn_core::tun::TunDevice::create(&assigned_ip)
+    let tun = vpn_core::tun::TunDevice::create(&assigned_ip, tunnel_mtu)
         .map_err(|e| format!("TUN creation failed: {}", e))?;
 
     store_and_emit_log(&app, &state.log_buffer, format!("TUN {} created", tun.name())).await?;
@@ -772,7 +784,7 @@ async fn connect(
     let handle = tokio::spawn(async move {
         let io = vpn_core::io::IoLoop::new();
         let _ =
-            io.run_with_cancel(&tun, &mut tls_stream, tunnel_pending, cancel)
+            io.run_with_cancel(tun, tls_stream, tunnel_pending, cancel)
                 .await;
     });
 

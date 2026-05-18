@@ -81,16 +81,18 @@ pub struct PppSession {
     remote_magic: u32,
     lcp_identifier: u8,
     ipcp_identifier: u8,
+    mru: u16,
 }
 
 impl PppSession {
-    pub fn new() -> Self {
+    pub fn new(mru: u16) -> Self {
         let mut rng = rand::thread_rng();
         Self {
             local_magic: rng.gen(),
             remote_magic: 0,
             lcp_identifier: 1,
             ipcp_identifier: 1,
+            mru,
         }
     }
 
@@ -335,11 +337,12 @@ impl PppSession {
 
     fn build_lcp_configure_request(&self) -> Vec<u8> {
         let id = self.lcp_identifier;
+        let mru = self.mru;
         let mut payload = vec![
             proto::LCP_OPT_MRU,
             4,
-            (1354 >> 8) as u8,
-            (1354 & 0xFF) as u8,
+            (mru >> 8) as u8,
+            (mru & 0xFF) as u8,
             proto::LCP_OPT_MAGIC_NUMBER,
             6,
             (self.local_magic >> 24) as u8,

@@ -1,5 +1,6 @@
 use clap::Parser;
 use tracing_subscriber;
+use vpn_core::tunnel_mtu_from_env;
 
 #[derive(Parser)]
 #[command(name = "vpn-cli", about = "PoliVPN - Fortinet SSL-VPN CLI Client")]
@@ -91,6 +92,9 @@ async fn main() {
     tracing::info!("DNS servers: {:?}", config.dns_servers);
     tracing::info!("Split routes: {:?}", config.split_routes);
 
+    let tunnel_mtu = tunnel_mtu_from_env();
+    tracing::info!("Tunnel MRU/MTU: {} bytes", tunnel_mtu);
+
     tracing::info!("Opening TLS connection for tunnel (second session after XML)...");
     let mut tls_stream = match vpn_core::tls::connect_insecure_tls(&auth.gateway.host, auth.gateway.port).await {
         Ok(s) => s,
@@ -110,7 +114,7 @@ async fn main() {
     };
 
     tracing::info!("Negotiating LCP...");
-    let mut ppp = vpn_core::ppp::PppSession::new();
+    let mut ppp = vpn_core::ppp::PppSession::new(tunnel_mtu);
     if let Err(e) = ppp.negotiate_lcp(&mut tls_stream, &mut tunnel_pending).await {
         tracing::error!("LCP negotiation failed: {}", e);
         return;
@@ -129,7 +133,7 @@ async fn main() {
 
     tracing::info!("PPP negotiation complete. Local IP: {}", assigned_ip);
 
-    let tun = match vpn_core::tun::TunDevice::create(&assigned_ip) {
+    let tun = match vpn_core::tun::TunDevice::create(&assigned_ip, tunnel_mtu) {
         Ok(t) => t,
         Err(e) => {
             tracing::error!("TUN device creation failed: {}", e);
@@ -159,7 +163,7 @@ async fn main() {
     tracing::info!("VPN connected. Press Ctrl+C to disconnect.");
 
     let io = vpn_core::io::IoLoop::new();
-    if let Err(e) = io.run(&tun, &mut tls_stream, tunnel_pending).await {
+    if let Err(e) = io.run(tun, tls_stream, tunnel_pending).await {
         tracing::error!("IO loop error: {}", e);
     }
 
