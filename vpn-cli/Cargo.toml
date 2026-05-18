@@ -1,0 +1,15 @@
+[package]
+name = "vpn-cli"
+version = "1.0.0"
+edition = "2021"
+
+[[bin]]
+name = "vpn-cli"
+path = "src/main.rs"
+
+[dependencies]
+vpn-core = { path = "../vpn-core" }
+tokio.workspace = true
+clap.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true

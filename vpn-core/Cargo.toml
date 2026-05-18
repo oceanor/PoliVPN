@@ -1,0 +1,28 @@
+[package]
+name = "vpn-core"
+version = "1.0.0"
+edition = "2021"
+
+[dependencies]
+tokio.workspace = true
+reqwest.workspace = true
+tokio-native-tls.workspace = true
+native-tls.workspace = true
+tun.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+quick-xml.workspace = true
+urlencoding.workspace = true
+tracing.workspace = true
+thiserror.workspace = true
+chrono.workspace = true
+once_cell.workspace = true
+bytes.workspace = true
+rand.workspace = true
+tokio-util = { version = "0.7" }
+
+[target.'cfg(target_os = "windows")'.dependencies]
+windows-sys = { version = "0.59", features = [
+    "Win32_NetworkManagement_IpHelper",
+    "Win32_Networking_WinSock",
+] }

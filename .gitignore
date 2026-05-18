@@ -1,0 +1,43 @@
+# Rust / Cargo — tutta l’uscita delle build Cargo (dipendenze, binari, bundle).
+# Copre anche:
+#   - target/ nella radice del workspace (vpn-core, vpn-cli, vpn-helper, …)
+#   - vpn-app/src-tauri/target/ (EXE, MSI in bundle/msi, artefatti Tauri/WiX, …)
+**/target/
+# Cargo.lock: per una libreria si ignora spesso; per un'app binaria è meglio
+# COMMITTARLO e rimuovere la riga seguente così le build sono riproducibili.
+# Cargo.lock
+
+# Segreti e configurazioni locali (MAI committare)
+.env
+.env.*
+!.env.example
+# MSI: formato come `.env` nella radice; modello pubblicato in `.env.example`
+polivpn.build.env
+*.local.toml
+config.local.toml
+secrets/
+*.pem
+*.key
+*_credentials.json
+
+# Cursor (locale / agent — non versionare)
+.cursor/
+
+# IDE / OS
+.idea/
+.vscode/
+*.swp
+.DS_Store
+Thumbs.db
+
+# Frontend / Tauri (cache e artefatti locali)
+vpn-app/node_modules/
+vpn-app/dist/
+vpn-app/.tauri/
+
+# Wintun DLL ridistribuita solo in artefatti di build (scaricata da build.rs)
+vpn-app/src-tauri/resources/wintun.dll
+
+# Log e dump involontari
+*.log
+vpn-log*.txt

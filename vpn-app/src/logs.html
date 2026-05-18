@@ -1,0 +1,41 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PoliVPN - Logs</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Cascadia Code', Consolas, monospace;
+      background: #0d1117;
+      color: #c9d1d9;
+      height: 100vh;
+      overflow: hidden;
+    }
+    #logContainer {
+      height: 100vh;
+      overflow-y: auto;
+      padding: 12px 14px;
+      font-size: 12px;
+      line-height: 1.7;
+    }
+    .log-entry {
+      border-bottom: 1px solid #161b22;
+      padding: 2px 0;
+    }
+    .timestamp { color: #484f58; margin-right: 8px; }
+    .message { color: #c9d1d9; }
+    .log-entry.error .message { color: #f85149; }
+    .log-entry.success .message { color: #3fb950; }
+    .log-entry.warn .message { color: #d29922; }
+    .empty { color: #484f58; font-style: italic; }
+  </style>
+</head>
+<body>
+  <div id="logContainer">
+    <div class="log-entry empty">In attesa di log...</div>
+  </div>
+  <script src="logs.js"></script>
+</body>
+</html>

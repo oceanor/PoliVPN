@@ -1,0 +1,7 @@
+{
+  "$schema": "../gen/schemas/desktop-schema.json",
+  "identifier": "default",
+  "description": "Finestre principale e log con IPC di base",
+  "windows": ["main", "logs"],
+  "permissions": ["core:default", "shell:allow-open"]
+}

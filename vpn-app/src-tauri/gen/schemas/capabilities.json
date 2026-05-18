@@ -1,0 +1,1 @@
+{"default":{"identifier":"default","description":"Finestre principale e log con IPC di base","local":true,"windows":["main","logs"],"permissions":["core:default","shell:allow-open"]}}

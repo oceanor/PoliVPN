@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>PoliVPN</title>
+  <link rel="stylesheet" href="styles.css" />
+</head>
+<body>
+  <div id="app">
+    <img id="logo" src="logo.png" alt="Logo" />
+    <p id="brandSubtitle" class="brand-subtitle"></p>
+
+    <p id="vpnConnectionState" class="vpn-connection-state" role="status" aria-live="polite">
+      <span class="vpn-connection-state__prefix">Stato VPN:</span>
+      <span id="vpnConnectionStateValue" class="vpn-connection-state__value vpn-connection-state__value--disconnected">DISCONNESSA</span>
+    </p>
+
+    <form id="vpnForm" action="#" method="post">
+    <div class="field-row">
+      <div class="field field--gateway">
+        <label class="field-label" for="gateway">Hostname</label>
+        <input type="text" id="gateway" placeholder="es. vpn.example.org" autocomplete="off" name="gateway" />
+      </div>
+      <div class="field field--port">
+        <label class="field-label" for="port">Porta</label>
+        <input type="number" id="port" min="1" max="65535" placeholder="443" value="443" inputmode="numeric" name="port" />
+      </div>
+    </div>
+    <div class="field">
+      <label class="field-label" for="username">Username</label>
+      <input type="text" id="username" placeholder="Nome utente" autocomplete="off" name="username" />
+    </div>
+    <div class="field">
+      <label class="field-label" for="password">Password</label>
+      <div class="password-field">
+        <input type="password" id="password" placeholder="••••••••" name="password" />
+        <button
+          type="button"
+          id="togglePassword"
+          class="btn-toggle-password"
+          aria-pressed="false"
+          title="Mostra password"
+          aria-label="Mostra password"
+        >
+          <svg class="btn-toggle-password__icon btn-toggle-password__icon--show" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z" />
+            <circle cx="12" cy="12" r="3" fill="none" />
+          </svg>
+          <svg class="btn-toggle-password__icon btn-toggle-password__icon--hide" viewBox="0 0 24 24" width="20" height="20" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" hidden>
+            <path d="M17.94 17.94A10.07 10.07 0 0 1 12 20c-7 0-11-8-11-8a18.45 18.45 0 0 1 5.06-5.94M9.9 4.24A9.12 9.12 0 0 1 12 4c7 0 11 8 11 8a18.5 18.5 0 0 1-2.16 3.19m-6.72-1.07a3 3 0 1 1-4.24-4.24" />
+            <path d="M1 1l22 22" />
+          </svg>
+        </button>
+      </div>
+    </div>
+
+    <label class="remember">
+      <input type="checkbox" id="saveCreds" name="remember" checked />
+      Ricorda credenziali
+    </label>
+
+    <button id="mainBtn" class="btn btn-primary" type="submit">Connetti</button>
+    </form>
+    <p id="statusLine" class="status-line" role="status" aria-live="polite"></p>
+  </div>
+
+  <footer class="app-footer" aria-label="Versione e log">
+    <button
+      id="logsBtn"
+      class="btn-log-icon"
+      type="button"
+      title="Apri log"
+      aria-label="Apri finestra log"
+    >
+      <svg class="btn-log-icon__svg" viewBox="0 0 24 24" width="16" height="16" aria-hidden="true" focusable="false">
+        <path fill="currentColor" fill-opacity="1" d="M6 22a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h8a2 2 0 0 1 1.7.9l4 6.4c.2.3.3.7.3 1.1V20a2 2 0 0 1-2 2H6Zm0-2h12v-9h-5a2 2 0 0 1-2-2V4H6v16Zm8-16v5h5L14 4ZM8 13h8v2H8v-2Zm0-4h5v2H8V9Z"/>
+      </svg>
+    </button>
+    <p id="app-version" class="app-version"></p>
+  </footer>
+
+  <div id="vpnCloseModal" class="modal-overlay" hidden>
+    <div
+      id="vpnCloseModalPanel"
+      class="modal-panel"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="vpnCloseModalTitle"
+      tabindex="-1"
+    >
+      <h2 id="vpnCloseModalTitle" class="modal-panel__title"></h2>
+      <div id="vpnCloseModalStep1">
+        <p class="modal-panel__text" id="vpnCloseModalIntro"></p>
+        <div class="modal-panel__actions">
+          <button type="button" id="vpnCloseBtnDisconnectQuit" class="btn btn-primary">Disconnetti e chiudi</button>
+          <button type="button" id="vpnCloseBtnMoreOptions" class="btn btn-secondary">Altre opzioni…</button>
+        </div>
+      </div>
+      <div id="vpnCloseModalStep2" hidden>
+        <p class="modal-panel__text modal-panel__text--warn" id="vpnCloseModalForceWarning"></p>
+        <div class="modal-panel__actions">
+          <button type="button" id="vpnCloseBtnForceQuit" class="btn btn-danger">Chiudi comunque</button>
+          <button type="button" id="vpnCloseBtnBack" class="btn btn-secondary">Indietro</button>
+        </div>
+      </div>
+      <button type="button" id="vpnCloseBtnStay" class="modal-panel__link-under">Resta nell'app</button>
+    </div>
+  </div>
+
+  <script type="module" src="main.js"></script>
+</body>
+</html>
